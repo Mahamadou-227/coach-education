@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#15803d">
+<title>Coach Éducation — Apprendre gratuitement</title>
+<style>
+:root{--green:#15803d;--dark:#14532d;--pale:#f0fdf4;--line:#dbe7df;--ink:#17251b}
+*{box-sizing:border-box}body{margin:0;font:16px/1.5 system-ui,Arial,sans-serif;color:var(--ink);background:#f7faf8}
+header{background:linear-gradient(120deg,#166534,#22a05a);color:white;padding:24px max(20px,calc((100% - 1100px)/2))}
+header h1{margin:0;font-size:clamp(26px,4vw,38px)}header p{margin:6px 0 0;color:#e7f8ec}
+main{max-width:1100px;margin:26px auto;padding:0 18px}.hero{background:white;border:1px solid var(--line);border-radius:18px;padding:22px;margin-bottom:20px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px}.stat{background:var(--pale);border-radius:12px;padding:12px}.stat b{display:block;font-size:24px;color:var(--dark)}
+.controls,.panel{background:white;border:1px solid var(--line);border-radius:16px;padding:18px;margin:16px 0}
+.filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+input,select,textarea,button{font:inherit;padding:11px;border:1px solid #cbd5ce;border-radius:9px;width:100%}
+button{background:var(--green);color:white;border:0;font-weight:650;cursor:pointer}button.secondary{background:#e8f5ec;color:var(--dark);border:1px solid #cce6d3}
+button:disabled{opacity:.55;cursor:not-allowed}.resources{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+.resource{background:white;border:1px solid var(--line);border-radius:14px;padding:16px}.resource h3{margin:0 0 8px}.tag{display:inline-block;background:var(--pale);color:var(--dark);padding:3px 9px;border-radius:20px;font-size:13px;margin:2px}
+.muted{color:#607066;font-size:14px}.hidden{display:none!important}.row{display:flex;gap:10px;align-items:center}.row>*{flex:1}
+footer{text-align:center;color:#607066;padding:30px}
+.notice{padding:12px;border-radius:10px;background:#fff7df;color:#654d0c;margin:10px 0}
+@media(max-width:600px){.stats{grid-template-columns:1fr 1fr}.row{display:block}.row>*{margin:5px 0}}
+</style></head>
+<body>
+<header><h1>Coach Éducation</h1><p>Des ressources scolaires gratuites, de la 6e à la Terminale.</p></header>
+<main>
+<section class="hero"><h2>Apprendre, réviser et réussir</h2><p>Retrouvez gratuitement des cours, exercices, devoirs, sujets d’examens et corrigés, classés par classe et par matière.</p>
+<div class="stats"><div class="stat"><b id="visits">—</b><span>Visites</span></div><div class="stat"><b id="downloads">—</b><span>Téléchargements</span></div><div class="stat"><b id="count">—</b><span>Documents publiés</span></div></div></section>
+<section class="controls"><h2>Rechercher un document</h2><div class="filters">
+<select id="level"><option value="">Toutes les classes</option></select>
+<select id="subject"><option value="">Toutes les matières</option></select>
+<select id="category"><option value="">Toutes les catégories</option><option value="cours">Cours</option><option value="exercice">Exercices</option><option value="devoir">Devoirs</option><option value="examen">Examens</option><option value="corrige">Corrigés</option></select>
+<input id="search" placeholder="Rechercher un titre…">
+</div></section>
+<div id="message" class="muted" aria-live="polite">Chargement des ressources…</div>
+<section id="resources" class="resources"></section>
+<section class="panel"><h2>Espace administrateur</h2><p class="muted">Connexion réservée à l’administrateur autorisé.</p>
+<div id="loginBox"><div class="row"><input id="email" type="email" placeholder="Adresse e-mail"><input id="password" type="password" placeholder="Mot de passe"></div><button id="login">Se connecter</button></div>
+<div id="adminBox" class="hidden"><p id="adminStatus" class="muted"></p><h3>Ajouter un document</h3>
+<form id="uploadForm"><input id="title" required placeholder="Titre du document"><textarea id="description" placeholder="Description (facultatif)"></textarea>
+<div class="filters"><select id="uploadLevel" required></select><select id="uploadSubject" required></select><select id="uploadCategory" required><option value="cours">Cours</option><option value="exercice">Exercices</option><option value="devoir">Devoirs</option><option value="examen">Examens</option><option value="corrige">Corrigés</option></select></div>
+<input id="file" type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" required><button id="publish">Téléverser et publier</button></form>
+<button class="secondary" id="logout">Se déconnecter</button></div></section>
+</main><footer>© Coach Éducation — Ressources gratuites pour tous.</footer>
+<script>
+const SUPABASE_URL="https://clwiwlrdkdlsujqeisqs.supabase.co";
+const SUPABASE_KEY="sb_publishable_1KlE4_UYvcxK4aaHUA7YBA_cNQpNjR9";
+const BUCKET="coach-education-documents";
+let token=null, levels=[], subjects=[], resources=[];
+const $=id=>document.getElementById(id);
+const headers=()=>({"apikey":SUPABASE_KEY,"Authorization":"Bearer "+(token||SUPABASE_KEY),"Content-Type":"application/json"});
+async function api(path,opts={}){const r=await fetch(SUPABASE_URL+path,{...opts,headers:{...headers(),...(opts.headers||{})}});let d=null;try{d=await r.json()}catch{}if(!r.ok)throw new Error(d?.message||d?.msg||"Erreur de connexion");return d}
+function msg(s){$("message").textContent=s}
+function fill(sel,items,placeholder){$(sel).innerHTML=`<option value="">${placeholder}</option>`+items.map(x=>`<option value="${x.id}">${x.name}</option>`).join("")}
+async function init(){
+try{
+[levels,subjects,resources]=await Promise.all([
+api("/rest/v1/education_levels?select=id,name,position&is_active=eq.true&order=position"),
+api("/rest/v1/subjects?select=id,name,level_id,position&is_active=eq.true&order=position"),
+api("/rest/v1/resources?select=id,title,description,category,resource_type,file_path,external_url,level_id,subject_id,downloads_count&is_published=eq.true&order=created_at.desc")
+]);
+fill("level",levels,"Toutes les classes");fill("uploadLevel",levels,"Choisir une classe");
+fill("subject",subjects,"Toutes les matières");fill("uploadSubject",subjects,"Choisir une matière");
+$("count").textContent=resources.length;
+const stats=await api("/rest/v1/site_stats?select=total_visits,total_downloads&id=eq.1");
+if(stats[0]){$("visits").textContent=stats[0].total_visits;$("downloads").textContent=stats[0].total_downloads}
+await api("/rest/v1/page_views",{method:"POST",headers:{"Prefer":"return=minimal"},body:JSON.stringify({page_path:"/"})});
+render();
+}catch(e){msg("Impossible de charger les documents : "+e.message+". Vérifiez les autorisations de la base.");}
+}
+function render(){
+const lv=$("level").value, su=$("subject").value, ca=$("category").value, q=$("search").value.toLowerCase();
+const found=resources.filter(r=>(!lv||r.level_id===lv)&&(!su||r.subject_id===su)&&(!ca||r.category===ca)&&(!q||r.title.toLowerCase().includes(q)));
+$("resources").innerHTML=found.map(r=>{const l=levels.find(x=>x.id===r.level_id),s=subjects.find(x=>x.id===r.subject_id);
+return `<article class="resource"><span class="tag">${label(r.category)}</span><h3>${esc(r.title)}</h3><p class="muted">${esc(l?.name||"")} · ${esc(s?.name||"")}</p><p>${esc(r.description||"")}</p><button onclick="downloadResource('${r.id}')">Consulter / Télécharger</button></article>`}).join("");
+if(!found.length)msg("Aucun document ne correspond à votre recherche.");else msg(found.length+" document(s) trouvé(s).");
+}
+function label(c){return ({cours:"Cours",exercice:"Exercices",devoir:"Devoirs",examen:"Examens",corrige:"Corrigés"})[c]||c}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+async function downloadResource(id){
+const r=resources.find(x=>x.id===id);if(!r)return;
+try{let url=r.external_url;if(r.file_path){const d=await api("/storage/v1/object/sign/"+BUCKET+"/"+r.file_path,{method:"POST",body:JSON.stringify({expiresIn:3600})});url=SUPABASE_URL+"/storage/v1"+d.signedURL}
+if(!url)throw new Error("Fichier indisponible");
+await api("/rest/v1/download_events",{method:"POST",headers:{"Prefer":"return=minimal"},body:JSON.stringify({resource_id:id})});
+window.open(url,"_blank","noopener");}catch(e){alert("Téléchargement impossible : "+e.message)}
+}
+$("level").onchange=$("subject").onchange=$("category").oninput=$("search").oninput=render;
+$("uploadLevel").onchange=()=>{const l=$("uploadLevel").value;const a=subjects.filter(s=>s.level_id===l);$("uploadSubject").innerHTML='<option value="">Choisir une matière</option>'+a.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join("")};
+$("login").onclick=async()=>{try{const d=await fetch(SUPABASE_URL+"/auth/v1/token?grant_type=password",{method:"POST",headers:{"apikey":SUPABASE_KEY,"Content-Type":"application/json"},body:JSON.stringify({email:$("email").value,password:$("password").value})}).then(r=>r.json());if(!d.access_token)throw new Error(d.msg||d.message||"Identifiants incorrects");token=d.access_token;
+const u=await fetch(SUPABASE_URL+"/auth/v1/user",{headers:{"apikey":SUPABASE_KEY,"Authorization":"Bearer "+token}}).then(r=>r.json());
+if(u.app_metadata?.role!=="admin")throw new Error("Ce compte n’a pas encore le rôle administrateur.");$("loginBox").classList.add("hidden");$("adminBox").classList.remove("hidden");$("adminStatus").textContent="Connecté : "+u.email;
+}catch(e){token=null;alert(e.message)}};
+$("logout").onclick=()=>{token=null;$("adminBox").classList.add("hidden");$("loginBox").classList.remove("hidden")};
+$("uploadForm").onsubmit=async e=>{e.preventDefault();const f=$("file").files[0];if(!f)return;
+try{$("publish").disabled=true;const path=crypto.randomUUID()+"-"+f.name.replace(/[^a-zA-Z0-9._-]/g,"_");
+let up=await fetch(SUPABASE_URL+"/storage/v1/object/"+BUCKET+"/"+path,{method:"POST",headers:{"apikey":SUPABASE_KEY,"Authorization":"Bearer "+token,"Content-Type":f.type||"application/octet-stream","x-upsert":"false"},body:f});if(!up.ok)throw new Error((await up.json()).message||"Échec du téléversement");
+await api("/rest/v1/resources",{method:"POST",headers:{"Prefer":"return=minimal"},body:JSON.stringify({title:$("title").value,description:$("description").value,category:$("uploadCategory").value,resource_type:f.type==="application/pdf"?"pdf":"document",file_path:path,level_id:$("uploadLevel").value,subject_id:$("uploadSubject").value,is_published:true})});
+alert("Document publié.");$("uploadForm").reset();await init();
+}catch(e){alert("Erreur : "+e.message)}finally{$("publish").disabled=false}
+};
+init();
+</script></body></html>
